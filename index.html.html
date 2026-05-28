@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>곱셈 마스터</title>
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;padding:0;background:#f9f9f9;font-family:'Jua',sans-serif;}
+  button{font-family:'Jua',sans-serif;outline:none;}
+  input{font-family:'Jua',sans-serif;outline:none;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback, useEffect } = React;
+const FONT = "'Jua', sans-serif";
+const MONO = "'Courier New', monospace";
+
+function shuffle(arr){ return [...arr].sort(()=>Math.random()-.5); }
+function make4(answer){
+  const s=new Set([answer]);
+  const deltas=[1,-1,2,-2,10,-10,11,-11,9,-9,20,-20];
+  shuffle(deltas).forEach(d=>{ if(s.size<4){ const w=answer+d; if(w>0) s.add(w); } });
+  return shuffle([...s]);
+}
+
+const STAGES = [
+  { id:1, name:"(두 자리)×(한 자리)", emoji:"🐣", color:"#FF6B9D", bg:"#FFF0F5", type:"2x1" },
+  { id:2, name:"(세 자리)×(한 자리)", emoji:"🐰", color:"#FF9A3C", bg:"#FFF5ED", type:"3x1" },
+  { id:3, name:"(두 자리)×(두 자리)", emoji:"🦊", color:"#9C27B0", bg:"#F8F0FF", type:"2x2" },
+  { id:4, name:"혼합 도전",           emoji:"🏆", color:"#607D8B", bg:"#F5F5F5", type:"mix" },
+];
+
+function genQ(type){
+  let a,b;
+  const r=Math.random();
+  if(type==="2x1"){ a=12+Math.floor(Math.random()*83); b=2+Math.floor(Math.random()*8); }
+  else if(type==="3x1"){ a=102+Math.floor(Math.random()*893); b=2+Math.floor(Math.random()*8); }
+  else if(type==="2x2"){ a=12+Math.floor(Math.random()*83); b=12+Math.floor(Math.random()*83); }
+  else {
+    if(r<0.4){ a=12+Math.floor(Math.random()*83); b=2+Math.floor(Math.random()*8); }
+    else if(r<0.7){ a=102+Math.floor(Math.random()*393); b=2+Math.floor(Math.random()*8); }
+    else { a=12+Math.floor(Math.random()*83); b=12+Math.floor(Math.random()*83); }
+  }
+  return { a, b, answer:a*b, choices:make4(a*b) };
+}
+
+function VerticalMul({ a, b, showAnswer, color }){
+  const aS=String(a), bS=String(b);
+  const ans=a*b;
+  const maxW=Math.max(aS.length, bS.length, String(ans).length);
+  const CW=34, PAD=20;
+  const W=(maxW+1)*CW+PAD*2;
+
+  const row=(num, hi=false)=>{
+    const s=String(num).padStart(maxW+1);
+    return s.split("").map((ch,i)=>(
+      ch===" " ? null :
+      <text key={i} x={PAD+i*CW+CW/2} y={0} textAnchor="middle"
+        fontFamily={MONO} fontSize={24}
+        fill={hi?color:"#333"} fontWeight={hi?"bold":"normal"}>{ch}</text>
+    ));
+  };
+
+  const bDigits=bS.split("").reverse();
+  const partials=bDigits.map((d,i)=>a*parseInt(d)*Math.pow(10,i));
+
+  return (
+    <div style={{overflowX:"auto",display:"flex",justifyContent:"center"}}>
+      <svg width={W} height={showAnswer&&partials.length>1?210:170}>
+        <g transform="translate(0,44)">{row(a)}</g>
+        <text x={PAD} y={82} fontFamily={MONO} fontSize={24} fill={color}>×</text>
+        <g transform="translate(0,82)">{row(b, true)}</g>
+        <line x1={PAD} y1={96} x2={W-PAD} y2={96} stroke={color} strokeWidth={2.5}/>
+        {showAnswer ? (
+          partials.length===1
+            ? <g transform="translate(0,128)">{row(ans, true)}</g>
+            : <>
+                <g transform="translate(0,128)">{row(partials[0])}</g>
+                <g transform="translate(0,162)">{row(partials[1])}</g>
+                <line x1={PAD} y1={172} x2={W-PAD} y2={172} stroke="#BBB" strokeWidth={1.5} strokeDasharray="4"/>
+                <g transform="translate(0,200)">{row(ans, true)}</g>
+              </>
+        ) : (
+          <text x={W/2} y={136} textAnchor="middle" fontFamily={FONT} fontSize={20} fill="#BBB">?</text>
+        )}
+      </svg>
+    </div>
+  );
+}
+
+function SolutionCard({ a, b, color }){
+  const aDigits = String(a).split("").reverse().map(Number);
+  const bDigits = String(b).split("").reverse().map(Number);
+  const placeLabel = ["일","십","백","천"];
+  const isBOne = bDigits.length === 1;
+  const bd = bDigits[0];
+
+  function stepsOneDigit(){
+    let carry=0;
+    const steps = aDigits.map((ad,i)=>{
+      const raw=ad*bd+carry;
+      const write=raw%10;
+      const nextCarry=Math.floor(raw/10);
+      const step={place:i,ad,bd,raw,write,carry,nextCarry};
+      carry=nextCarry;
+      return step;
+    });
+    if(carry>0) steps.push({place:aDigits.length,isCarryOnly:true,write:carry});
+    return steps;
+  }
+
+  function partialProducts(){
+    return bDigits.map((bd2,bi)=>{
+      let carry=0;
+      const digitSteps = aDigits.map((ad,ai)=>{
+        const raw=ad*bd2+carry;
+        const write=raw%10;
+        const nextCarry=Math.floor(raw/10);
+        const step={place:ai+bi,ad,bd:bd2,raw,write,carry,nextCarry};
+        carry=nextCarry;
+        return step;
+      });
+      if(carry>0) digitSteps.push({place:aDigits.length+bi,isCarryOnly:true,write:carry});
+      return { bi, bd:bd2, digitSteps, partial:a*bd2*Math.pow(10,bi) };
+    });
+  }
+
+  const rS={background:"#FFF",borderRadius:10,padding:"10px 14px",marginBottom:8,border:"1.5px solid #EEE",fontFamily:FONT,fontSize:14,color:"#444"};
+  const Badge=({label})=>(
+    <span style={{background:color+"18",color,borderRadius:8,padding:"2px 8px",fontSize:12,minWidth:52,textAlign:"center",display:"inline-block",flexShrink:0}}>{label}</span>
+  );
+
+  return(
+    <div style={{background:"#F8F9FF",borderRadius:14,padding:"14px 16px",marginTop:12}}>
+      <p style={{fontSize:13,color:"#888",margin:"0 0 10px",fontFamily:FONT}}>📖 이렇게 풀어요</p>
+      {isBOne ? (
+        <>
+          {stepsOneDigit().map((s,i)=>{
+            if(s.isCarryOnly) return(
+              <div key={i} style={{...rS,display:"flex",alignItems:"center",gap:8}}>
+                <Badge label="올림"/>
+                <span style={{marginLeft:4,color:"#888"}}>앞에서 올라온 <span style={{fontWeight:"bold",color}}>{s.write}</span> 을 그대로 써요</span>
+              </div>
+            );
+            return(
+              <div key={i} style={{...rS,display:"flex",flexDirection:"column",gap:6}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <Badge label={`${placeLabel[s.place]}의 자리`}/>
+                  <span style={{flex:1}}>
+                    <span style={{color,fontWeight:"bold"}}>{s.ad}</span>
+                    <span style={{color:"#888"}}> × </span>
+                    <span style={{color,fontWeight:"bold"}}>{s.bd}</span>
+                    {s.carry>0&&<span style={{color:"#888"}}> + 올림 <span style={{color:"#E91E63",fontWeight:"bold"}}>{s.carry}</span></span>}
+                    <span style={{color:"#888"}}> = </span>
+                    <span style={{fontWeight:"bold",color,fontSize:16}}>{s.raw}</span>
+                  </span>
+                </div>
+                <div style={{fontSize:12,color:"#888",paddingLeft:60}}>
+                  {s.raw>=10
+                    ? <>→ <span style={{color,fontWeight:"bold"}}>{s.write}</span> 쓰고 <span style={{color:"#E91E63",fontWeight:"bold"}}>{s.nextCarry}</span> 올림</>
+                    : <>→ <span style={{color,fontWeight:"bold"}}>{s.write}</span> 그대로 써요</>
+                  }
+                </div>
+              </div>
+            );
+          })}
+          <div style={{...rS,background:color+"10",border:`1.5px solid ${color}40`}}>
+            <span style={{color:"#888"}}>정답 </span>
+            <span style={{fontWeight:"bold",color,fontSize:18,marginLeft:8}}>{(a*b).toLocaleString()}</span>
+          </div>
+        </>
+      ) : (
+        <>
+          {partialProducts().map((pp)=>(
+            <div key={pp.bi} style={{marginBottom:10}}>
+              <p style={{fontSize:12,color:"#888",margin:"0 0 6px",fontFamily:FONT}}>
+                {pp.bi===0?"① 일의 자리":"② 십의 자리"} — <strong style={{color}}>{pp.bd}</strong>을 곱해요
+                {pp.bi===1&&<span style={{color:"#E91E63"}}> (한 칸 들여요!)</span>}
+              </p>
+              {pp.digitSteps.map((s,i)=>{
+                if(s.isCarryOnly) return(
+                  <div key={i} style={{...rS,display:"flex",alignItems:"center",gap:8}}>
+                    <Badge label="올림"/>
+                    <span style={{marginLeft:4}}><span style={{color,fontWeight:"bold"}}>{s.write}</span> 그대로 써요</span>
+                  </div>
+                );
+                return(
+                  <div key={i} style={{...rS,display:"flex",flexDirection:"column",gap:6}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <Badge label={`${placeLabel[i]}의 자리`}/>
+                      <span style={{flex:1}}>
+                        <span style={{color,fontWeight:"bold"}}>{s.ad}</span>
+                        <span style={{color:"#888"}}> × </span>
+                        <span style={{color,fontWeight:"bold"}}>{s.bd}</span>
+                        {s.carry>0&&<span style={{color:"#888"}}> + 올림 <span style={{color:"#E91E63",fontWeight:"bold"}}>{s.carry}</span></span>}
+                        <span style={{color:"#888"}}> = </span>
+                        <span style={{fontWeight:"bold",color,fontSize:16}}>{s.raw}</span>
+                      </span>
+                    </div>
+                    <div style={{fontSize:12,color:"#888",paddingLeft:60}}>
+                      {s.raw>=10
+                        ? <>→ <span style={{color,fontWeight:"bold"}}>{s.write}</span> 쓰고 <span style={{color:"#E91E63",fontWeight:"bold"}}>{s.nextCarry}</span> 올림</>
+                        : <>→ <span style={{color,fontWeight:"bold"}}>{s.write}</span> 그대로 써요</>
+                      }
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{...rS,background:"#F5F5F5"}}>
+                <span style={{color:"#888",fontSize:13}}>{pp.bi===0?"첫 번째":"두 번째"} 부분곱 = </span>
+                <span style={{fontWeight:"bold",color,fontSize:16}}>{pp.partial.toLocaleString()}</span>
+              </div>
+            </div>
+          ))}
+          <div style={{...rS,background:color+"10",border:`1.5px solid ${color}40`}}>
+            <span style={{color:"#888"}}>두 부분곱을 더하면 → </span>
+            <span style={{fontWeight:"bold",color,fontSize:18,marginLeft:4}}>{(a*b).toLocaleString()}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function getLessons(type){
+  if(type==="2x1") return [
+    { title:"자릿값을 나눠서 생각해요", visual:{a:23,b:4},
+      conceptBody:"**23 × 4** 를 풀 때,\n23을 **20과 3**으로 나눠요.\n\n일의 자리 먼저: 3 × 4 = **12**\n십의 자리 다음: 20 × 4 = **80**\n\n마지막으로 더해요: 12 + 80 = **92**",
+      problems:[{a:23,b:4},{a:31,b:3}] },
+    { title:"받아올림이 있을 때", visual:{a:37,b:4},
+      conceptBody:"**37 × 4** 를 풀어봐요.\n\n일의 자리: 7 × 4 = **28** → 8 쓰고 **2 올림**\n십의 자리: 3 × 4 = 12 + 올림 2 = **14**\n\n정답: **148**\n\n받아올림 숫자를 꼭 기억해요!",
+      problems:[{a:37,b:4},{a:58,b:3}] },
+  ];
+  if(type==="3x1") return [
+    { title:"세 자리도 순서대로!", visual:{a:134,b:3},
+      conceptBody:"**134 × 3** 풀기\n\n일의 자리: 4 × 3 = **12** → 2 쓰고 1 올림\n십의 자리: 3 × 3 = 9 + 1 = **10** → 0 쓰고 1 올림\n백의 자리: 1 × 3 = 3 + 1 = **4**\n\n정답: **402**",
+      problems:[{a:134,b:3},{a:213,b:4}] },
+    { title:"받아올림 두 번!", visual:{a:256,b:4},
+      conceptBody:"**256 × 4** 풀기\n\n일의 자리: 6 × 4 = **24** → 4 쓰고 2 올림\n십의 자리: 5 × 4 = 20 + 2 = **22** → 2 쓰고 2 올림\n백의 자리: 2 × 4 = 8 + 2 = **10**\n\n정답: **1024**",
+      problems:[{a:256,b:4},{a:348,b:3}] },
+  ];
+  if(type==="2x2") return [
+    { title:"일의 자리 먼저 곱해요", visual:{a:23,b:14},
+      conceptBody:"**23 × 14** 를 풀 때\n14를 **4와 10**으로 나눠요.\n\n**1단계**: 23 × 4 = **92**\n이게 첫 번째 부분곱이에요.",
+      problems:[{a:23,b:14},{a:31,b:12}] },
+    { title:"십의 자리도 곱해요", visual:{a:23,b:14},
+      conceptBody:"**23 × 14** 이어서 풀기\n\n**2단계**: 23 × 10 = **230**\n(십의 자리니까 0이 하나 붙어요!)\n\n두 부분곱을 더해요:\n92 + 230 = **322**",
+      problems:[{a:23,b:14},{a:42,b:21}] },
+  ];
+  return [
+    { title:"두 자리 × 한 자리 복습", visual:{a:45,b:6},
+      conceptBody:"**45 × 6** 풀기\n\n일의 자리: 5 × 6 = **30** → 0 쓰고 3 올림\n십의 자리: 4 × 6 = 24 + 3 = **27**\n\n정답: **270**",
+      problems:[{a:45,b:6},{a:67,b:4}] },
+    { title:"세 자리 × 한 자리 복습", visual:{a:312,b:5},
+      conceptBody:"**312 × 5** 풀기\n\n일의 자리: 2 × 5 = **10** → 0 쓰고 1 올림\n십의 자리: 1 × 5 = 5 + 1 = **6**\n백의 자리: 3 × 5 = **15**\n\n정답: **1560**",
+      problems:[{a:312,b:5},{a:214,b:3}] },
+    { title:"두 자리 × 두 자리 복습", visual:{a:24,b:13},
+      conceptBody:"**24 × 13** 풀기\n\n24 × 3 = **72**\n24 × 10 = **240**\n72 + 240 = **312**",
+      problems:[{a:24,b:13},{a:32,b:21}] },
+  ];
+}
+
+function LessonScreen({ stage, lessons, lessonIdx, onNext }){
+  const lesson = lessons[lessonIdx];
+  const [phase, setPhase] = useState("concept");
+  const [probIdx, setProbIdx] = useState(0);
+  const [sel, setSel] = useState(null);
+  const [showSol, setShowSol] = useState(false);
+  const prob = lesson.problems[probIdx];
+  const [choices] = useState(()=>make4(prob.a*prob.b));
+  const isLast = probIdx===lesson.problems.length-1;
+  const isLastLesson = lessonIdx===lessons.length-1;
+  const totalSteps = lessons.length*(1+lesson.problems.length);
+  const curStep = lessonIdx*(1+lesson.problems.length)+(phase==="concept"?0:probIdx+1);
+
+  const handleAnswer=(c)=>{ if(sel!==null)return; setSel(c); if(c!==prob.a*prob.b) setShowSol(true); };
+  const handleNext=()=>{
+    if(isLast){ onNext(); }
+    else{ setProbIdx(i=>i+1); setSel(null); setShowSol(false); }
+  };
+  const renderBody=(text)=>text.split(/\*\*(.*?)\*\*/g).map((p,i)=>
+    i%2===1?<strong key={i} style={{color:stage.color}}>{p}</strong>:<span key={i}>{p}</span>
+  );
+
+  return(
+    <div style={{minHeight:"100vh",background:stage.bg,display:"flex",flexDirection:"column",alignItems:"center",fontFamily:FONT,padding:"16px 16px 48px"}}>
+      <div style={{width:"100%",maxWidth:460,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+          <span style={{fontSize:13,color:"#AAA"}}>개념 {lessonIdx+1}/{lessons.length}</span>
+          <span style={{fontSize:13,color:stage.color}}>{phase==="concept"?"개념 설명":`연습 ${probIdx+1}/${lesson.problems.length}`}</span>
+        </div>
+        <div style={{height:7,background:"#DDD",borderRadius:99,overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${(curStep/totalSteps)*100}%`,background:stage.color,borderRadius:99,transition:"width .4s"}}/>
+        </div>
+      </div>
+
+      {phase==="concept"&&(
+        <div style={{background:"#FFF",borderRadius:24,padding:"22px 20px",maxWidth:460,width:"100%",boxShadow:`0 4px 28px ${stage.color}20`}}>
+          <div style={{textAlign:"center",marginBottom:14}}>
+            <p style={{fontSize:12,color:"#AAA",margin:"0 0 4px"}}>개념</p>
+            <h2 style={{fontSize:18,color:"#2D2D2D",margin:0,fontFamily:FONT}}>{lesson.title}</h2>
+          </div>
+          <div style={{background:stage.bg,borderRadius:14,padding:"12px 8px",marginBottom:14}}>
+            <VerticalMul a={lesson.visual.a} b={lesson.visual.b} showAnswer={true} color={stage.color}/>
+          </div>
+          <div style={{background:"#F8F9FF",borderRadius:14,padding:"14px 16px"}}>
+            <p style={{fontSize:15,lineHeight:1.9,color:"#444",whiteSpace:"pre-line",margin:0}}>{renderBody(lesson.conceptBody)}</p>
+          </div>
+          <button onClick={()=>setPhase("problem")} style={{marginTop:16,width:"100%",padding:"15px",borderRadius:14,background:stage.color,color:"#FFF",border:"none",fontSize:16,fontFamily:FONT,cursor:"pointer"}}>
+            ✏️ 이제 문제 풀어봐요!
+          </button>
+        </div>
+      )}
+
+      {phase==="problem"&&(
+        <div style={{width:"100%",maxWidth:460}}>
+          <div style={{background:"#FFF",borderRadius:24,padding:"22px 20px",boxShadow:`0 4px 24px ${stage.color}28`}}>
+            <p style={{fontSize:12,color:"#AAA",textAlign:"center",margin:"0 0 10px"}}>연습 문제 {probIdx+1}</p>
+            <div style={{background:stage.bg,borderRadius:14,padding:"12px 8px",marginBottom:12}}>
+              <VerticalMul a={prob.a} b={prob.b} showAnswer={false} color={stage.color}/>
+            </div>
+            {sel!==null&&(
+              <div style={{background:sel===prob.a*prob.b?"#E8F5E9":"#FFEBEE",borderRadius:12,padding:"10px 14px",marginBottom:8,fontFamily:FONT,fontSize:14,color:sel===prob.a*prob.b?"#2E7D32":"#C62828"}}>
+                {sel===prob.a*prob.b?`🎉 정답! ${prob.a} × ${prob.b} = ${(prob.a*prob.b).toLocaleString()}`:"❌ 틀렸어요. 아래 풀이를 잘 읽어봐요."}
+              </div>
+            )}
+            {showSol&&<SolutionCard a={prob.a} b={prob.b} color={stage.color}/>}
+          </div>
+          {sel===null&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:12}}>
+              {choices.map((c,i)=>(
+                <button key={i} onClick={()=>handleAnswer(c)} style={{padding:"18px 10px",borderRadius:16,border:`2px solid ${stage.color}40`,background:"#FFF",fontSize:22,fontFamily:FONT,cursor:"pointer",color:"#333"}}>
+                  {c.toLocaleString()}
+                </button>
+              ))}
+            </div>
+          )}
+          {sel!==null&&(
+            <button onClick={handleNext} style={{marginTop:12,width:"100%",padding:"15px",borderRadius:14,background:stage.color,color:"#FFF",border:"none",fontSize:16,fontFamily:FONT,cursor:"pointer"}}>
+              {isLast&&isLastLesson?"🎮 퀴즈 도전하기!":isLast?"다음 개념 보기 →":"다음 문제 →"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TOTAL_Q=10;
+
+function QuizScreen({ stage, onFinish }){
+  const [qs]=useState(()=>Array.from({length:TOTAL_Q},()=>genQ(stage.type)));
+  const [idx,setIdx]=useState(0);
+  const [sel,setSel]=useState(null);
+  const [score,setScore]=useState(0);
+  const [showSol,setShowSol]=useState(false);
+  const [burst,setBurst]=useState(false);
+  const q=qs[idx];
+
+  const handle=(c)=>{
+    if(sel!==null)return;
+    setSel(c);
+    if(c===q.answer){ setScore(s=>s+1); setBurst(true); setTimeout(()=>setBurst(false),800); }
+    else setShowSol(true);
+  };
+  const next=()=>{
+    setSel(null); setShowSol(false);
+    if(idx+1>=TOTAL_Q) onFinish(score+(sel===q.answer?1:0));
+    else setIdx(i=>i+1);
+  };
+
+  return(
+    <div style={{minHeight:"100vh",background:stage.bg,display:"flex",flexDirection:"column",alignItems:"center",fontFamily:FONT,padding:"16px 16px 32px"}}>
+      <div style={{width:"100%",maxWidth:460,marginBottom:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
+          <span style={{fontSize:22}}>{stage.emoji}</span>
+          <span style={{fontSize:14,color:"#888"}}>{idx+1}/{TOTAL_Q}</span>
+          <span style={{fontSize:14,color:stage.color}}>✓ {score}</span>
+        </div>
+        <div style={{height:7,background:"#DDD",borderRadius:99,overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${(idx/TOTAL_Q)*100}%`,background:stage.color,borderRadius:99,transition:"width .3s"}}/>
+        </div>
+      </div>
+      <div style={{position:"relative",background:"#FFF",borderRadius:24,padding:"22px 20px",maxWidth:460,width:"100%",boxShadow:`0 4px 24px ${stage.color}30`}}>
+        {burst&&(
+          <div style={{position:"absolute",top:"50%",left:"50%",pointerEvents:"none",zIndex:10}}>
+            {Array.from({length:10},(_,i)=>(
+              <div key={i} style={{position:"absolute",width:9,height:9,borderRadius:"50%",background:["#FFD700","#FF6B9D","#4FC3F7","#81C784"][i%4],transform:`rotate(${i*36}deg) translateX(55px)`,animation:"sPop .6s ease-out both"}}/>
+            ))}
+            <style>{`@keyframes sPop{0%{opacity:1}100%{opacity:0}}`}</style>
+          </div>
+        )}
+        <p style={{fontSize:13,color:"#AAA",textAlign:"center",margin:"0 0 10px"}}>계산하세요</p>
+        <div style={{background:stage.bg,borderRadius:14,padding:"10px 8px",marginBottom:10}}>
+          <VerticalMul a={q.a} b={q.b} showAnswer={false} color={stage.color}/>
+        </div>
+        {sel!==null&&(
+          <div style={{background:sel===q.answer?"#E8F5E9":"#FFEBEE",borderRadius:12,padding:"8px 14px",fontFamily:FONT,fontSize:14,color:sel===q.answer?"#2E7D32":"#C62828"}}>
+            {sel===q.answer?`🎉 정답! ${q.a.toLocaleString()} × ${q.b} = ${q.answer.toLocaleString()}`:`❌ 아쉬워요! 정답은 ${q.answer.toLocaleString()}이에요.`}
+          </div>
+        )}
+        {showSol&&<SolutionCard a={q.a} b={q.b} color={stage.color}/>}
+      </div>
+      {sel===null?(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,maxWidth:460,width:"100%",marginTop:14}}>
+          {q.choices.map((c,i)=>(
+            <button key={i} onClick={()=>handle(c)} style={{padding:"18px 10px",borderRadius:16,border:`2.5px solid ${stage.color}40`,background:"#FFF",fontSize:22,fontFamily:FONT,cursor:"pointer",color:"#333"}}>
+              {c.toLocaleString()}
+            </button>
+          ))}
+        </div>
+      ):(
+        <button onClick={next} style={{marginTop:14,maxWidth:460,width:"100%",padding:"15px",borderRadius:14,background:stage.color,color:"#FFF",border:"none",fontSize:16,fontFamily:FONT,cursor:"pointer"}}>
+          {idx+1>=TOTAL_Q?"결과 보기 🏁":"다음 문제 →"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ResultScreen({ stage, score, onRetry, onHome }){
+  const pct=(score/TOTAL_Q)*100;
+  const sc=pct>=90?3:pct>=70?2:pct>=50?1:0;
+  const msgs=[["다시 해봐요! 💪","#888"],["잘했어요 😊","#FF9A3C"],["훌륭해요! 🎉","#2196F3"],["완벽해요! 🌟","#9C27B0"]];
+  return(
+    <div style={{minHeight:"100vh",background:stage.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:FONT,padding:"24px 16px"}}>
+      <div style={{background:"#FFF",borderRadius:28,padding:"32px 28px",maxWidth:360,width:"100%",textAlign:"center",boxShadow:`0 8px 40px ${stage.color}25`}}>
+        <div style={{fontSize:56,marginBottom:6}}>{stage.emoji}</div>
+        <h2 style={{fontSize:20,color:"#2D2D2D",margin:"0 0 4px"}}>퀴즈 완료!</h2>
+        <p style={{color:msgs[sc][1],fontSize:14,margin:"0 0 16px"}}>{msgs[sc][0]}</p>
+        <div style={{width:90,height:90,borderRadius:"50%",border:`5px solid ${stage.color}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",background:stage.bg}}>
+          <span style={{fontSize:26,color:stage.color,lineHeight:1}}>{score}</span>
+          <span style={{fontSize:11,color:"#AAA"}}>/ {TOTAL_Q}</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:18}}>
+          {[0,1,2].map(i=><span key={i} style={{fontSize:28,color:i<sc?"#FFD700":"#E0E0E0"}}>★</span>)}
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onRetry} style={{flex:1,padding:"13px",borderRadius:14,background:stage.color,color:"#FFF",border:"none",fontSize:15,fontFamily:FONT,cursor:"pointer"}}>다시하기 🔄</button>
+          <button onClick={onHome} style={{flex:1,padding:"13px",borderRadius:14,background:"#F0F0F0",color:"#555",border:"none",fontSize:15,fontFamily:FONT,cursor:"pointer"}}>홈으로 🏠</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StageSelect({ unlocked, stars, onSelect }){
+  return(
+    <div style={{padding:"28px 16px",maxWidth:460,margin:"0 auto"}}>
+      <div style={{textAlign:"center",marginBottom:28}}>
+        <div style={{fontSize:44}}>✖️</div>
+        <h1 style={{fontFamily:FONT,fontSize:26,margin:"6px 0",color:"#2D2D2D"}}>곱셈 마스터</h1>
+        <p style={{color:"#888",fontSize:14,margin:0}}>3학년 1학기 · 자릿수 곱셈</p>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {STAGES.map((s,i)=>{
+          const locked=i>0&&!unlocked.includes(i);
+          const sc=stars[i]||0;
+          return(
+            <button key={s.id} onClick={()=>!locked&&onSelect(s)} style={{background:locked?"#F5F5F5":s.bg,border:`2px solid ${locked?"#DDD":s.color}`,borderRadius:18,padding:"18px 20px",cursor:locked?"not-allowed":"pointer",opacity:locked?0.5:1,display:"flex",alignItems:"center",gap:14,width:"100%"}}>
+              <span style={{fontSize:32}}>{locked?"🔒":s.emoji}</span>
+              <div style={{flex:1,textAlign:"left"}}>
+                <div style={{fontFamily:FONT,fontSize:16,color:locked?"#AAA":s.color}}>{s.name}</div>
+                {!locked&&<div style={{fontSize:12,color:"#AAA",marginTop:2}}>개념 학습 → 연습 → 퀴즈</div>}
+              </div>
+              <div style={{display:"flex",gap:2}}>
+                {[0,1,2].map(j=><span key={j} style={{fontSize:18,color:j<sc?"#FFD700":"#DDD"}}>★</span>)}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const [screen,setScreen]=useState("home");
+  const [stage,setStage]=useState(null);
+  const [lessonIdx,setLessonIdx]=useState(0);
+  const [score,setScore]=useState(0);
+  const [unlocked,setUnlocked]=useState([0]);
+  const [stars,setStars]=useState({});
+  const stageIdx=stage?STAGES.findIndex(s=>s.id===stage.id):-1;
+  const lessons=stage?getLessons(stage.type):[];
+  const applyScore=(s)=>{
+    const pct=(s/TOTAL_Q)*100;
+    const sc=pct>=90?3:pct>=70?2:pct>=50?1:0;
+    setStars(p=>({...p,[stageIdx]:Math.max(p[stageIdx]||0,sc)}));
+    if(pct>=50&&stageIdx+1<STAGES.length) setUnlocked(p=>p.includes(stageIdx+1)?p:[...p,stageIdx+1]);
+  };
+  if(screen==="home") return <StageSelect unlocked={unlocked} stars={stars} onSelect={s=>{setStage(s);setLessonIdx(0);setScreen("lesson");}}/>;
+  if(screen==="lesson") return <LessonScreen stage={stage} lessons={lessons} lessonIdx={lessonIdx} onNext={()=>{ if(lessonIdx+1<lessons.length) setLessonIdx(i=>i+1); else setScreen("quiz"); }}/>;
+  if(screen==="quiz") return <QuizScreen stage={stage} onFinish={s=>{setScore(s);applyScore(s);setScreen("result");}}/>;
+  if(screen==="result") return <ResultScreen stage={stage} score={score} onRetry={()=>{setLessonIdx(0);setScreen("lesson");}} onHome={()=>setScreen("home")}/>;
+  return null;
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App/>);
+</script>
+</body>
+</html>
