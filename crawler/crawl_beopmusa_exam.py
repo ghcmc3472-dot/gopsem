@@ -44,6 +44,9 @@ KIND_RE = {
 BEOPMUSA_RE = re.compile(r"법무사")
 # --kind all 일 때도 시험 자료와 무관한 글(정오표, 이벤트 등)은 거른다.
 STUDY_RE = re.compile(r"기출|문제|정답|해설|총평|시험|답안")
+# 메뉴·광고성 링크 제외 (수강신청, 개강 안내 등)
+EXCLUDE_TITLE_RE = re.compile(r"수강|강의|신청|접수|이벤트|할인|개강|모집|무료배포|설명회")
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp")
 # 페이지네이션 파라미터 자동 감지용
 PAGE_PARAM_CANDIDATES = ("pageNo", "page", "pageIndex", "curPage", "nowPage", "pg", "p")
 
@@ -60,6 +63,8 @@ def detect_kind(title: str) -> str:
 def title_matches(title: str, kind: str, dedicated: bool) -> bool:
     """kind: 1cha / 2cha / all. dedicated=True 면 게시판 전체가 법무사 전용이라
     제목에 '법무사'가 없어도 통과시킨다."""
+    if EXCLUDE_TITLE_RE.search(title):
+        return False
     if not dedicated and not BEOPMUSA_RE.search(title):
         return False
     if kind == "all":
@@ -221,7 +226,9 @@ class Crawler:
                     self.log(f"[{src.name}] 페이지 파라미터 감지: {detected}")
                     page_param = detected
             new = 0
-            list_path = urlparse(list_url).path
+            list_parts = urlparse(list_url)
+            list_path = list_parts.path
+            list_dir = list_path.rsplit("/", 1)[0] + "/"
             for a in doc.find_all("a", href=True):
                 title = a.get_text(" ", strip=True)
                 if len(title) < 4 or title.isdigit():
@@ -234,8 +241,11 @@ class Crawler:
                     if not href:
                         continue
                 post_url = urljoin(url, href)
-                if urlparse(post_url).path == list_path:
+                pp = urlparse(post_url)
+                if pp.path == list_path:
                     continue  # 목록 페이지 자신을 가리키는 링크(페이지네이션·검색)는 게시글이 아님
+                if pp.netloc != list_parts.netloc or not pp.path.startswith(list_dir):
+                    continue  # 다른 호스트나 게시판 밖(수강신청, 메뉴 등)으로 가는 링크
                 if post_url in seen:
                     continue
                 seen.add(post_url)
@@ -278,6 +288,8 @@ class Crawler:
             href = a["href"]
             text = a.get_text(" ", strip=True)
             low_href, low_text = href.lower(), text.lower()
+            if low_text.endswith(IMAGE_EXT) or urlparse(low_href).path.endswith(IMAGE_EXT):
+                continue  # 본문 캡처 이미지 등은 제외
             is_attach = (
                 low_href.endswith(ATTACH_EXT)
                 or low_text.endswith(ATTACH_EXT)
